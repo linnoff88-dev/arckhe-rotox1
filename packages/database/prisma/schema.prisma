@@ -1,0 +1,314 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum UserRole {
+  CLIENT
+  DRIVER
+  CARRIER
+  ADMIN
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  BLOCKED
+}
+
+enum VehicleType {
+  BIKE
+  MOTO
+  CAR
+  VAN
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  SEARCHING_DRIVER
+  DRIVER_ASSIGNED
+  COLLECTING
+  PICKED_UP
+  DELIVERING
+  DELIVERED
+  CANCELLED
+}
+
+enum OrderCategory {
+  VETERINARY
+  FROZEN
+  GENERAL
+}
+
+enum OrderUrgency {
+  STANDARD
+  EXPRESS
+}
+
+enum PaymentMethod {
+  PIX
+  CREDIT_CARD
+  DEBIT_CARD
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  REFUNDED
+  FAILED
+}
+
+// ============================================
+// MODELS
+// ============================================
+
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  phone        String
+  passwordHash String     @map("password_hash")
+  role         UserRole
+  status       UserStatus @default(PENDING)
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  client  Client?
+  driver  Driver?
+  carrier Carrier?
+
+  @@map("users")
+}
+
+model Client {
+  id              String  @id @default(uuid())
+  userId          String  @unique @map("user_id")
+  name            String
+  document        String?
+  documentType    String? @map("document_type")
+  profilePhotoUrl String? @map("profile_photo_url")
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  addresses Address[]
+  orders    Order[]
+  ratings   Rating[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("clients")
+}
+
+model Driver {
+  id              String      @id @default(uuid())
+  userId          String      @unique @map("user_id")
+  name            String
+  document        String
+  cnhNumber       String?     @map("cnh_number")
+  cnhPhotoUrl     String?     @map("cnh_photo_url")
+  profilePhotoUrl String?     @map("profile_photo_url")
+  vehicleType     VehicleType @map("vehicle_type")
+  vehiclePlate    String?     @map("vehicle_plate")
+  vehicleDocUrl   String?     @map("vehicle_doc_url")
+  isOnline        Boolean     @default(false) @map("is_online")
+  currentLat      Decimal?    @map("current_lat") @db.Decimal(10, 8)
+  currentLng      Decimal?    @map("current_lng") @db.Decimal(11, 8)
+  ratingAvg       Decimal     @default(0) @map("rating_avg") @db.Decimal(3, 2)
+  ratingCount     Int         @default(0) @map("rating_count")
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders  Order[]
+  ratings Rating[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("drivers")
+}
+
+model Carrier {
+  id          String  @id @default(uuid())
+  userId      String  @unique @map("user_id")
+  companyName String  @map("company_name")
+  cnpj        String  @unique
+  documents   Json?
+  regions     Json?
+  isActive    Boolean @default(false) @map("is_active")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("carriers")
+}
+
+model Address {
+  id           String   @id @default(uuid())
+  clientId     String   @map("client_id")
+  label        String?
+  street       String
+  number       String
+  complement   String?
+  neighborhood String?
+  city         String
+  state        String   @db.Char(2)
+  zipCode      String   @map("zip_code")
+  lat          Decimal  @db.Decimal(10, 8)
+  lng          Decimal  @db.Decimal(11, 8)
+  isDefault    Boolean  @default(false) @map("is_default")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@map("addresses")
+}
+
+model Order {
+  id               String        @id @default(uuid())
+  clientId         String        @map("client_id")
+  driverId         String?       @map("driver_id")
+  pharmacyId       String?       @map("pharmacy_id")
+  status           OrderStatus   @default(PENDING_PAYMENT)
+  category         OrderCategory
+  urgency          OrderUrgency  @default(STANDARD)
+  description      String?
+  pickupAddress    Json          @map("pickup_address")
+  pickupLat        Decimal       @map("pickup_lat") @db.Decimal(10, 8)
+  pickupLng        Decimal       @map("pickup_lng") @db.Decimal(11, 8)
+  deliveryAddress  Json          @map("delivery_address")
+  deliveryLat      Decimal       @map("delivery_lat") @db.Decimal(10, 8)
+  deliveryLng      Decimal       @map("delivery_lng") @db.Decimal(11, 8)
+  distanceKm       Decimal       @map("distance_km") @db.Decimal(10, 2)
+  estimatedMinutes Int?          @map("estimated_minutes")
+  price            Decimal       @db.Decimal(10, 2)
+  platformFee      Decimal       @map("platform_fee") @db.Decimal(10, 2)
+  driverEarning    Decimal       @map("driver_earning") @db.Decimal(10, 2)
+  pickupPhotoUrl   String?       @map("pickup_photo_url")
+  deliveryPhotoUrl String?       @map("delivery_photo_url")
+  receiverName     String?       @map("receiver_name")
+  cancelReason     String?       @map("cancel_reason")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  acceptedAt       DateTime?     @map("accepted_at")
+  pickedUpAt       DateTime?     @map("picked_up_at")
+  deliveredAt      DateTime?     @map("delivered_at")
+  cancelledAt      DateTime?     @map("cancelled_at")
+
+  client        Client              @relation(fields: [clientId], references: [id])
+  driver        Driver?             @relation(fields: [driverId], references: [id])
+  pharmacy      Pharmacy?           @relation("PharmacyOrders", fields: [pharmacyId], references: [id])
+  payment       Payment?
+  rating        Rating?
+  statusHistory OrderStatusHistory[]
+
+  @@index([status])
+  @@index([clientId])
+  @@index([driverId])
+  @@index([pharmacyId])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+model Payment {
+  id              String        @id @default(uuid())
+  orderId         String        @unique @map("order_id")
+  method          PaymentMethod
+  status          PaymentStatus @default(PENDING)
+  amount          Decimal       @db.Decimal(10, 2)
+  externalId      String?       @map("external_id")
+  pixQrCode       String?       @map("pix_qr_code")
+  pixQrCodeBase64 String?       @map("pix_qr_code_base64")
+  paidAt          DateTime?     @map("paid_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id])
+
+  @@map("payments")
+}
+
+model Rating {
+  id        String   @id @default(uuid())
+  orderId   String   @unique @map("order_id")
+  driverId  String   @map("driver_id")
+  clientId  String   @map("client_id")
+  stars     Int
+  comment   String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  order  Order  @relation(fields: [orderId], references: [id])
+  driver Driver @relation(fields: [driverId], references: [id])
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@map("ratings")
+}
+
+model AdminAction {
+  id        String   @id @default(uuid())
+  adminId   String   @map("admin_id")
+  action    String
+  targetId  String?  @map("target_id")
+  details   Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("admin_actions")
+}
+
+// ============================================
+// PHARMACY MODULE
+// ============================================
+
+model Pharmacy {
+  id            String   @id @default(uuid())
+  name          String
+  tradeName     String?  @map("trade_name")
+  cnpj          String   @unique
+  phone         String
+  email         String?
+  logoUrl       String?  @map("logo_url")
+  street        String
+  number        String
+  complement    String?
+  neighborhood  String?
+  city          String
+  state         String   @db.Char(2)
+  zipCode       String   @map("zip_code")
+  lat           Decimal  @db.Decimal(10, 8)
+  lng           Decimal  @db.Decimal(11, 8)
+  isActive      Boolean  @default(true) @map("is_active")
+  openingHours  Json?    @map("opening_hours")
+  acceptsExpress Boolean @default(true) @map("accepts_express")
+  rating        Decimal  @default(0) @db.Decimal(3, 2)
+  ratingCount   Int      @default(0) @map("rating_count")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  orders Order[] @relation("PharmacyOrders")
+
+  @@index([city, isActive])
+  @@map("pharmacies")
+}
+
+// ============================================
+// ORDER TRACKING
+// ============================================
+
+model OrderStatusHistory {
+  id        String      @id @default(uuid())
+  orderId   String      @map("order_id")
+  status    OrderStatus
+  notes     String?
+  lat       Decimal?    @db.Decimal(10, 8)
+  lng       Decimal?    @db.Decimal(11, 8)
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@map("order_status_history")
+}
